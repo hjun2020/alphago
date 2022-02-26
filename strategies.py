@@ -28,15 +28,18 @@ from player_interface import MCTSPlayerInterface
 
 flags.DEFINE_integer('softpick_move_cutoff', (go.N * go.N // 12) // 2 * 2,
                      'The move number (<) up to which moves are softpicked from MCTS visits.')
+
 # Ensure that both white and black have an equal number of softpicked moves.
 flags.register_validator('softpick_move_cutoff', lambda x: x % 2 == 0)
 
 flags.DEFINE_float('resign_threshold', -0.9,
                    'The post-search Q evaluation at which resign should happen.'
                    'A threshold of -1 implies resign is disabled.')
+
 flags.register_validator('resign_threshold', lambda x: -1 <= x < 0)
 
 flags.DEFINE_integer('num_readouts', 800 if go.N == 19 else 200,
+
                      'Number of searches to add to the MCTS search tree before playing a move.')
 flags.register_validator('num_readouts', lambda x: x > 0)
 
@@ -197,7 +200,6 @@ class MCTSPlayer(MCTSPlayerInterface):
                 dbg(self.show_path_to_root(leaf))
             # if game is over, override the value estimate with the true score
             if leaf.is_done():
-
                 value = 1 if leaf.position.score() > 0 else -1
                 leaf.backup_value(value, up_to=self.root)
                 continue
@@ -211,6 +213,7 @@ class MCTSPlayer(MCTSPlayerInterface):
             for leaf, move_prob, value in zip(leaves, move_probs, values):
                 leaf.revert_virtual_loss(up_to=self.root)
                 leaf.incorporate_results(move_prob, value, up_to=self.root)
+
         return leaves
 
     def show_path_to_root(self, node):

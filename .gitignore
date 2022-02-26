@@ -1,0 +1,13 @@
+.venv/
+holdout_dir/
+selfplay_dir/
+test_data/
+tmp/
+__pycache__/
+
+
+
+sandbox.py
+sandbox2.py
+sandbox3.py
+sandbox4.py

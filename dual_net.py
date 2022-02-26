@@ -182,30 +182,39 @@ def get_features():
     else:
         raise ValueError('unrecognized input features "%s"' %
                          FLAGS.input_features)
-
+def get_features_planes():
+    if FLAGS.input_features == 'agz':
+        return features_lib.AGZ_FEATURES_PLANES
+    elif FLAGS.input_features == 'mlperf07':
+        return features_lib.MLPERF07_FEATURES_PLANES
+    else:
+        raise ValueError('unrecognized input features "%s"' %
+                         FLAGS.input_features)
 
 
 class DualNetwork(tf.keras.Model):
     def __init__(self, save_file, params=FLAGS.flag_values_dict()):
         super().__init__()
         self.save_file = save_file
-        self.inference_fn = ModelInferenceFn(params=params)
+        self.inference_fn = ModelInferenceFn(params=params, training=True)
 
     def call(self, inputs):
         return self.inference_fn(inputs)
 
+    def run(self, position):
+        probs, values = self.run_many([position])
+        return probs[0], values[0]
+
     def run_many(self, positions):
         f = get_features()
         processed = [features_lib.extract_features(p, f) for p in positions]
-        print(processed[0].shape)
 
         processed = np.array(processed, dtype=float)
-        print(processed.shape)
 
         
         policy_output, value_output, logits = self.call(processed)
         policy_output = np.vsplit(policy_output, policy_output.shape[0])
-        value_output = np.vsplit(value_output, value_output.shape[0])
+        value_output = np.vsplit(np.expand_dims(value_output, axis=1), value_output.shape[0])
         logits = np.vsplit(logits, logits.shape[0])
 
         policy_output = list(map(lambda x: np.squeeze(x), policy_output))
@@ -214,9 +223,24 @@ class DualNetwork(tf.keras.Model):
 
         return policy_output, value_output
 
+    def _train_step(self, *tf_records):
+        pass
+
+def loss(model, x, y, training):
+    # training=training is needed only if there are layers with different
+    # behavior during training versus inference (e.g. Dropout).
+    y_ = model(x, training=training)
+
+    return loss_object(y_true=y, y_pred=y_)
+
+def grad(model, inputs, targets):
+    with tf.GradientTape() as tape:
+        loss_value = loss(model, inputs, targets, training=True)
+    return loss_value, tape.gradient(loss_value, model.trainable_variables)
+
 
 class ModelInferenceFn(tf.keras.layers.Layer):
-    def __init__(self, params):
+    def __init__(self, params, training):
         super(ModelInferenceFn, self).__init__()
         self.params = params
         if FLAGS.bool_features:
@@ -285,6 +309,26 @@ class ModelInferenceFn(tf.keras.layers.Layer):
                             bias_regularizer=None, activity_regularizer=None, kernel_constraint=None,
                             bias_constraint=None,
                         )
+        self.mg_conv2d = functools.partial(
+            tf.keras.layers.Conv2D,
+            filters=params['conv_width'],
+            kernel_size=3,
+            padding='same',
+            use_bias=False,
+            data_format=data_format)
+
+        self.mg_batchn = functools.partial(
+                        tf.keras.layers.BatchNormalization,
+                        axis=bn_axis,
+                        momentum=.95,
+                        epsilon=1e-5,
+                        center=True,
+                        scale=True,
+                        fused=True)
+
+        
+
+        
         self.mg_conv2d2 = tf.keras.layers.Conv2D(
                     filters=params['policy_conv_width'], kernel_size=3, strides=(1, 1), padding='same',
                     data_format=None, dilation_rate=(1, 1), groups=1, activation=None,
@@ -319,8 +363,7 @@ class ModelInferenceFn(tf.keras.layers.Layer):
         Returns:
             (policy_output, value_output, logits) tuple of tensors.
         """
-        initial_block = self.mg_activation(self.mg_batchn1(self.mg_conv2d1(features)))
-        print(initial_block.shape, '!!!!!!!!')
+        initial_block = self.mg_activation(self.mg_batchn()(self.mg_conv2d()(features)))
         # the shared stack
         shared_output = initial_block
         for _ in range(self.params['trunk_layers']):
@@ -330,8 +373,8 @@ class ModelInferenceFn(tf.keras.layers.Layer):
                 shared_output = self.mg_res_layer(shared_output)
 
         # Policy head
-        policy_conv = self.mg_conv2d2(shared_output)
-        policy_conv = self.mg_activation(self.mg_batchn2(policy_conv))
+        policy_conv = self.mg_conv2d(filters=self.params['policy_conv_width'], kernel_size=1)(shared_output)
+        policy_conv = self.mg_activation(self.mg_batchn()(policy_conv))
         logits = self.policy_head_dense(
             tf.reshape(
                 policy_conv, [-1, self.params['policy_conv_width'] * go.N * go.N]))
@@ -339,10 +382,10 @@ class ModelInferenceFn(tf.keras.layers.Layer):
         policy_output = tf.nn.softmax(logits, name='policy_output')
 
         # Value head
-        value_conv = self.mg_conv2d3(
+        value_conv = self.mg_conv2d(filters=self.params['value_conv_width'], kernel_size=1)(
             shared_output)
         value_conv = self.mg_activation(
-            self.mg_batchn3(value_conv))
+            self.mg_batchn()(value_conv))
 
         value_fc_hidden = self.mg_activation(self.value_head_dense1(
             tf.reshape(value_conv, [-1, self.params['value_conv_width'] * go.N * go.N])))
@@ -360,10 +403,8 @@ class ModelInferenceFn(tf.keras.layers.Layer):
         return tf.nn.relu(inputs)
 
     def residual_inner(self, inputs):
-        print(inputs.shape, '?????')
-        conv_layer1 = self.mg_batchn1(self.mg_conv2d1(inputs))
+        conv_layer1 = self.mg_batchn()(self.mg_conv2d()(inputs))
         initial_output = self.mg_activation(conv_layer1)
-        conv_layer2 = self.mg_batchn1(self.mg_conv2d1(initial_output))
         return conv_layer2
 
     def mg_res_layer(self, inputs):

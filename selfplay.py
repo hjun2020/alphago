@@ -27,13 +27,13 @@ import tensorflow as tf
 
 import coords
 import dual_net
-# import preprocessing
+import preprocessing
 from strategies import MCTSPlayer
 import utils
 
 flags.DEFINE_string('load_file', None, 'Path to model save files.')
-flags.DEFINE_string('selfplay_dir', None, 'Where to write game data.')
-flags.DEFINE_string('holdout_dir', None, 'Where to write held-out game data.')
+flags.DEFINE_string('selfplay_dir', "/Users/hyunkyujun/development/alphago/selfplay_dir", 'Where to write game data.')
+flags.DEFINE_string('holdout_dir', "/Users/hyunkyujun/development/alphago/holdout_dir", 'Where to write held-out game data.')
 flags.DEFINE_string('sgf_dir', None, 'Where to write human-readable SGFs.')
 flags.DEFINE_float('holdout_pct', 0.05, 'What percent of games to hold out.')
 flags.DEFINE_float('resign_disable_pct', 0.05,
@@ -67,18 +67,23 @@ def play(network):
 
     # Must run this once at the start to expand the root node.
     first_node = player.root.select_leaf()
-    # prob, val = network.run(first_node.position)
+    prob, val = network.run(first_node.position)
     prob, val = None, None
     first_node.incorporate_results(prob, val, first_node)
 
-    while True:
 
+    ## TEMOPORARY COUNT: TO BE DELETED
+    cnt = 0
+    ###################################
+    
+    while True:
         start = time.time()
         player.root.inject_noise()
         current_readouts = player.root.N
         # we want to do "X additional readouts", rather than "up to X readouts".
         while player.root.N < current_readouts + readouts:
             player.tree_search()
+
 
 
         if FLAGS.verbose >= 3:
@@ -91,9 +96,24 @@ def play(network):
             break
         move = player.pick_move()
         player.play_move(move)
+
+
+        ## TEMOPORARY COUNT: TO BE DELETED
+        print("player moved!!")
+        ###################################
+
+
         if player.root.is_done():
             player.set_result(player.root.position.result(), was_resign=False)
             break
+
+        ## TEMOPORARY COUNT: TO BE DELETED
+        print(cnt)
+        if cnt == 10:
+            break
+        cnt += 1
+        ###################################
+
 
         if (FLAGS.verbose >= 2) or (FLAGS.verbose >= 1 and player.root.position.n % 10 == 9):
             print("Q: {:.5f}".format(player.root.Q))
@@ -129,6 +149,11 @@ def run_game(load_file, selfplay_dir=None, holdout_dir=None,
     with utils.logged_timer("Playing game"):
         player = play(network)
 
+    ## TEMOPORARY COUNT: TO BE DELETED
+    print("play finished!!!!!")
+    ###################################
+
+
     output_name = '{}-{}'.format(int(time.time()), socket.gethostname())
     game_data = player.extract_data()
     if sgf_dir is not None:
@@ -136,6 +161,11 @@ def run_game(load_file, selfplay_dir=None, holdout_dir=None,
             f.write(player.to_sgf(use_comments=False))
         with tf.file.GFile(os.path.join(full_sgf_dir, '{}.sgf'.format(output_name)), 'w') as f:
             f.write(player.to_sgf())
+
+
+
+
+
 
     tf_examples = preprocessing.make_dataset_from_selfplay(game_data)
 
@@ -149,6 +179,11 @@ def run_game(load_file, selfplay_dir=None, holdout_dir=None,
         else:
             fname = os.path.join(selfplay_dir,
                                  "{}.tfrecord.zz".format(output_name))
+
+
+        ## TEMOPORARY COUNT: TO BE DELETED
+        print("writing tf exmaples!!!!!")
+        ###################################
 
         preprocessing.write_tf_examples(fname, tf_examples)
 
