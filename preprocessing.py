@@ -63,10 +63,10 @@ def write_tf_examples(filename, tf_examples, serialize=True):
         tf_examples: An iterable of tf.Example
         serialize: whether to serialize the examples.
     """
-    # with tf.io.TFRecordWriter(
-    #         filename, options=TF_RECORD_CONFIG) as writer:
     with tf.io.TFRecordWriter(
-            filename, compression_type='GZIP') as writer:
+            filename, options=TF_RECORD_CONFIG) as writer:
+    # with tf.io.TFRecordWriter(
+    #         filename, compression_type='GZIP') as writer:
         for ex in tf_examples:
             if serialize:
                 writer.write(ex.SerializeToString())

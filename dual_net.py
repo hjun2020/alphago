@@ -223,20 +223,68 @@ class DualNetwork(tf.keras.Model):
 
         return policy_output, value_output
 
-    def _train_step(self, *tf_records):
-        pass
+    def _train_step(self, inputs):
+        features, labels = inputs
 
-def loss(model, x, y, training):
-    # training=training is needed only if there are layers with different
-    # behavior during training versus inference (e.g. Dropout).
-    y_ = model(x, training=training)
+        with tf.GradientTape() as tape:
+            policy_output, value_output, logits = self.inference_fn(features)
+            reg_vars = [v for v in self.trainable_variables
+                    if 'bias' not in v.name and 'beta' not in v.name]
 
-    return loss_object(y_true=y, y_pred=y_)
+            loss = loss_object(logits, value_output, labels, reg_vars, self.params)
 
-def grad(model, inputs, targets):
-    with tf.GradientTape() as tape:
-        loss_value = loss(model, inputs, targets, training=True)
-    return loss_value, tape.gradient(loss_value, model.trainable_variables)
+        # Apply an optimization step
+        variables = self.trainable_variables 
+        gradients = tape.gradient(loss, variables)
+        self.optimizer.apply_gradients(zip(gradients, variables))
+
+        # Return a dict mapping metric names to current value
+        return {'batch_loss': loss}
+
+def loss_object(logits, value_output, labels, reg_vars, params):
+    policy_cost = tf.reduce_mean(
+        tf.compat.v1.nn.softmax_cross_entropy_with_logits_v2(
+            logits=logits, labels=tf.stop_gradient(labels['pi_tensor'])))
+
+    value_cost = params['value_cost_weight'] * tf.reduce_mean(
+        tf.square(value_output - labels['value_tensor']))
+
+
+    l2_cost = params['l2_strength'] * \
+        tf.add_n([tf.nn.l2_loss(v) for v in reg_vars])
+
+    combined_cost = policy_cost + value_cost + l2_cost
+
+    return combined_cost
+
+
+
+def mg_batchn_layer(bn_axis):
+    return tf.keras.layers.BatchNormalization(
+                            axis=bn_axis,
+                            momentum=0.95,
+                            epsilon=1e-5,
+                            center=True,
+                            scale=True,
+                            beta_initializer="zeros",
+                            gamma_initializer="ones",
+                            moving_mean_initializer="zeros",
+                            moving_variance_initializer="ones",
+                            beta_regularizer=None,
+                            gamma_regularizer=None,
+                            beta_constraint=None,
+                            gamma_constraint=None,
+                        )
+
+def mg_conv2d_layer(conv_width, kernel_size=3):
+    return tf.keras.layers.Conv2D(
+                            filters=conv_width, kernel_size=kernel_size, strides=(1, 1), padding='same',
+                            data_format=None, dilation_rate=(1, 1), groups=1, activation=None,
+                            use_bias=False, kernel_initializer='glorot_uniform',
+                            bias_initializer='zeros', kernel_regularizer=None,
+                            bias_regularizer=None, activity_regularizer=None, kernel_constraint=None,
+                            bias_constraint=None,
+                        )
 
 
 class ModelInferenceFn(tf.keras.layers.Layer):
@@ -253,62 +301,29 @@ class ModelInferenceFn(tf.keras.layers.Layer):
             bn_axis = 1
             data_format = 'channels_first'
 
-        self.mg_batchn1 = tf.keras.layers.BatchNormalization(
-                            axis=bn_axis,
-                            momentum=0.95,
-                            epsilon=1e-5,
-                            center=True,
-                            scale=True,
-                            beta_initializer="zeros",
-                            gamma_initializer="ones",
-                            moving_mean_initializer="zeros",
-                            moving_variance_initializer="ones",
-                            beta_regularizer=None,
-                            gamma_regularizer=None,
-                            beta_constraint=None,
-                            gamma_constraint=None,
-                        )
+        self.mg_batchn1_1 = mg_batchn_layer(bn_axis=bn_axis)
+        self.mg_batchn1_2 = mg_batchn_layer(bn_axis=bn_axis)
+        self.mg_batchn1_3 = mg_batchn_layer(bn_axis=bn_axis)
 
-        self.mg_batchn2 = tf.keras.layers.BatchNormalization(
-                            axis=bn_axis,
-                            momentum=0.95,
-                            epsilon=1e-5,
-                            center=True,
-                            scale=True,
-                            beta_initializer="zeros",
-                            gamma_initializer="ones",
-                            moving_mean_initializer="zeros",
-                            moving_variance_initializer="ones",
-                            beta_regularizer=None,
-                            gamma_regularizer=None,
-                            beta_constraint=None,
-                            gamma_constraint=None,
-                        )
+        self.mg_batchn2 = mg_batchn_layer(bn_axis=bn_axis)
+        self.mg_batchn3 = mg_batchn_layer(bn_axis=bn_axis)
 
-        self.mg_batchn3 = tf.keras.layers.BatchNormalization(
-                            axis=bn_axis,
-                            momentum=0.95,
-                            epsilon=1e-5,
-                            center=True,
-                            scale=True,
-                            beta_initializer="zeros",
-                            gamma_initializer="ones",
-                            moving_mean_initializer="zeros",
-                            moving_variance_initializer="ones",
-                            beta_regularizer=None,
-                            gamma_regularizer=None,
-                            beta_constraint=None,
-                            gamma_constraint=None,
-                        )
+        self.mg_conv2d1_1 = mg_conv2d_layer(conv_width=params['conv_width'])
+        self.mg_conv2d1_2 = mg_conv2d_layer(conv_width=params['conv_width'])
+        self.mg_conv2d1_3 = mg_conv2d_layer(conv_width=params['conv_width'])
 
-        self.mg_conv2d1 = tf.keras.layers.Conv2D(
-                            filters=params['conv_width'], kernel_size=3, strides=(1, 1), padding='same',
-                            data_format=None, dilation_rate=(1, 1), groups=1, activation=None,
-                            use_bias=False, kernel_initializer='glorot_uniform',
-                            bias_initializer='zeros', kernel_regularizer=None,
-                            bias_regularizer=None, activity_regularizer=None, kernel_constraint=None,
-                            bias_constraint=None,
-                        )
+
+        self.mg_conv2d2 = mg_conv2d_layer(conv_width=params['policy_conv_width'], kernel_size=1)
+        self.mg_conv2d3 = mg_conv2d_layer(conv_width=params['value_conv_width'], kernel_size=1)
+
+        self.mg_global_avgpool2d = tf.keras.layers.AveragePooling2D(pool_size=go.N, 
+                                    strides=1, padding='valid', data_format=data_format)
+
+        self.policy_head_dense = tf.keras.layers.Dense(go.N * go.N + 1)
+        self.value_head_dense1 = tf.keras.layers.Dense(self.params['fc_width'])
+        self.value_head_dense2 = tf.keras.layers.Dense(1)
+
+
         self.mg_conv2d = functools.partial(
             tf.keras.layers.Conv2D,
             filters=params['conv_width'],
@@ -327,33 +342,6 @@ class ModelInferenceFn(tf.keras.layers.Layer):
                         fused=True)
 
         
-
-        
-        self.mg_conv2d2 = tf.keras.layers.Conv2D(
-                    filters=params['policy_conv_width'], kernel_size=3, strides=(1, 1), padding='same',
-                    data_format=None, dilation_rate=(1, 1), groups=1, activation=None,
-                    use_bias=False, kernel_initializer='glorot_uniform',
-                    bias_initializer='zeros', kernel_regularizer=None,
-                    bias_regularizer=None, activity_regularizer=None, kernel_constraint=None,
-                    bias_constraint=None,
-                )
-        self.mg_conv2d3 = tf.keras.layers.Conv2D(
-                    filters=params['value_conv_width'], kernel_size=3, strides=(1, 1), padding='same',
-                    data_format=None, dilation_rate=(1, 1), groups=1, activation=None,
-                    use_bias=False, kernel_initializer='glorot_uniform',
-                    bias_initializer='zeros', kernel_regularizer=None,
-                    bias_regularizer=None, activity_regularizer=None, kernel_constraint=None,
-                    bias_constraint=None,
-                )
-
-        self.mg_global_avgpool2d = tf.keras.layers.AveragePooling2D(pool_size=go.N, 
-                                    strides=1, padding='valid', data_format=data_format)
-
-        self.policy_head_dense = tf.keras.layers.Dense(go.N * go.N + 1)
-        self.value_head_dense1 = tf.keras.layers.Dense(self.params['fc_width'])
-        self.value_head_dense2 = tf.keras.layers.Dense(1)
-
-
     def call(self, features, training=True):
         """Builds just the inference part of the model graph.
         Args:
@@ -363,7 +351,9 @@ class ModelInferenceFn(tf.keras.layers.Layer):
         Returns:
             (policy_output, value_output, logits) tuple of tensors.
         """
-        initial_block = self.mg_activation(self.mg_batchn()(self.mg_conv2d()(features)))
+        # initial_block = self.mg_activation(self.mg_batchn()(self.mg_conv2d()(features)))
+        initial_block = self.mg_activation(self.mg_batchn1_1(self.mg_conv2d1_1(features)))
+
         # the shared stack
         shared_output = initial_block
         for _ in range(self.params['trunk_layers']):
@@ -373,8 +363,8 @@ class ModelInferenceFn(tf.keras.layers.Layer):
                 shared_output = self.mg_res_layer(shared_output)
 
         # Policy head
-        policy_conv = self.mg_conv2d(filters=self.params['policy_conv_width'], kernel_size=1)(shared_output)
-        policy_conv = self.mg_activation(self.mg_batchn()(policy_conv))
+        policy_conv = self.mg_conv2d2(shared_output)
+        policy_conv = self.mg_activation(self.mg_batchn2(policy_conv))
         logits = self.policy_head_dense(
             tf.reshape(
                 policy_conv, [-1, self.params['policy_conv_width'] * go.N * go.N]))
@@ -382,10 +372,8 @@ class ModelInferenceFn(tf.keras.layers.Layer):
         policy_output = tf.nn.softmax(logits, name='policy_output')
 
         # Value head
-        value_conv = self.mg_conv2d(filters=self.params['value_conv_width'], kernel_size=1)(
-            shared_output)
-        value_conv = self.mg_activation(
-            self.mg_batchn()(value_conv))
+        value_conv = self.mg_conv2d3(shared_output)
+        value_conv = self.mg_activation(self.mg_batchn3(value_conv))
 
         value_fc_hidden = self.mg_activation(self.value_head_dense1(
             tf.reshape(value_conv, [-1, self.params['value_conv_width'] * go.N * go.N])))
@@ -403,8 +391,11 @@ class ModelInferenceFn(tf.keras.layers.Layer):
         return tf.nn.relu(inputs)
 
     def residual_inner(self, inputs):
-        conv_layer1 = self.mg_batchn()(self.mg_conv2d()(inputs))
+        # conv_layer1 = self.mg_batchn()(self.mg_conv2d()(inputs))
+        conv_layer1 = self.mg_batchn1_2(self.mg_conv2d1_2(inputs))
+
         initial_output = self.mg_activation(conv_layer1)
+        conv_layer2 = self.mg_batchn1_3(self.mg_conv2d1_3(initial_output))
         return conv_layer2
 
     def mg_res_layer(self, inputs):

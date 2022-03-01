@@ -232,15 +232,13 @@ def train(*tf_records: "Records to train on"):
                 random_rotation=True)
 
 
-        ###################################################
-        dataset = _input_fn()
-        print(type(dataset), '!!!!!')
-        for x in dataset:
-            print(x, '!!!!!!')
-        ###################################################
 
-        hooks = [UpdateRatioSessionHook(FLAGS.work_dir),
-                 EchoStepCounterHook(output_dir=FLAGS.work_dir)]
+
+        network = dual_net.DualNetwork(save_file=None)
+        network.compile(optimizer='adam')
+
+        # hooks = [UpdateRatioSessionHook(FLAGS.work_dir),
+        #          EchoStepCounterHook(output_dir=FLAGS.work_dir)]
 
     steps = FLAGS.steps_to_train
     if not steps and FLAGS.num_examples:
@@ -264,7 +262,11 @@ def train(*tf_records: "Records to train on"):
         print("== Wait cell:", games.read_wait_cell(), flush=True)
 
     try:
-        estimator.train(_input_fn, steps=steps, hooks=hooks)
+        # estimator.train(_input_fn, steps=steps, hooks=hooks)
+        input_tensors = _input_fn()
+        for data in input_tensors:
+            print(network.train_step(inputs=data))
+
         if FLAGS.use_bt:
             bigtable_input.set_fresh_watermark(games, index_from,
                                                FLAGS.window_size)

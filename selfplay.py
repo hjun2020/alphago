@@ -68,7 +68,6 @@ def play(network):
     # Must run this once at the start to expand the root node.
     first_node = player.root.select_leaf()
     prob, val = network.run(first_node.position)
-    prob, val = None, None
     first_node.incorporate_results(prob, val, first_node)
 
 
@@ -80,11 +79,10 @@ def play(network):
         start = time.time()
         player.root.inject_noise()
         current_readouts = player.root.N
+        print(player.root.position.to_play, '======================')
         # we want to do "X additional readouts", rather than "up to X readouts".
         while player.root.N < current_readouts + readouts:
             player.tree_search()
-
-
 
         if FLAGS.verbose >= 3:
             print(player.root.position)

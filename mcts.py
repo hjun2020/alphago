@@ -184,8 +184,6 @@ class MCTSNode(object):
         self.parent.revert_virtual_loss(up_to)
 
     def incorporate_results(self, move_probabilities, value, up_to):
-        move_probabilities = np.array([0 for _ in range(go.N * go.N + 1)])
-        value = 1
         assert move_probabilities.shape == (go.N * go.N + 1,)
         # A finished game should not be going through this code path - should
         # directly call backup_value() on the result of the game.
