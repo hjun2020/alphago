@@ -8,7 +8,7 @@
 - python3 selfplay.py \           
   --load_file=outputs/models/$MODEL_NAME \
   --num_readouts 10 \               
-  --verbose 1 \                                       
+  --verbose 3 \                                       
   --selfplay_dir=outputs/data/selfplay \
   --holdout_dir=outputs/data/holdout \
 
