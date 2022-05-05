@@ -1,2 +1,6 @@
-# Darknet #
-Darknet is an open source neural network framework written in C and CUDA. It is fast, easy to install, and supports CPU and GPU computation.
+# Alpahgo applied to OMOK #
+* The goal of the project is to apply alphago system to a simpler board game called OMOK.
+* Currently, most codes written are from Google resesarch's alpha zero implementation.
+* However, their codes are written using Tensorflow 1. 
+* I converted it to Tensorflow 2.
+
