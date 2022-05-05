@@ -4,7 +4,7 @@ selfplay_dir/
 test_data/
 tmp/
 __pycache__/
-
+outputs/
 
 
 sandbox.py

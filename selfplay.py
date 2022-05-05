@@ -89,6 +89,7 @@ def play(network):
             print(player.root.describe())
 
         if player.should_resign():
+            print("resigned!!")
             player.set_result(-1 * player.root.position.to_play,
                               was_resign=True)
             break
@@ -107,8 +108,8 @@ def play(network):
 
         ## TEMOPORARY COUNT: TO BE DELETED
         print(cnt)
-        if cnt == 10:
-            break
+        # if cnt == 10:
+        #     break
         cnt += 1
         ###################################
 
