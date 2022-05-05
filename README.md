@@ -11,3 +11,6 @@
   --verbose 1 \                                       
   --selfplay_dir=outputs/data/selfplay \
   --holdout_dir=outputs/data/holdout \
+
+* Note that current selfplay doesn't utilize any trained neural net so that it is just random movements.
+* The selfplay generates move histories of players and this will be the dataset of future training(To be done) 
