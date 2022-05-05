@@ -5,7 +5,7 @@
 * I converted it to Tensorflow 2.
 * The training part and OMOK implementation has not been finished yet.
 * However, you can try selfplay part at this point:
-python3 selfplay.py \           
+- python3 selfplay.py \           
   --load_file=outputs/models/$MODEL_NAME \
   --num_readouts 10 \               
   --verbose 1 \                                       
